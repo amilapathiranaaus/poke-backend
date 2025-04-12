@@ -13,12 +13,6 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Load Pokémon names
-const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf8')
-  .split('\n')
-  .map(name => name.trim().toUpperCase())
-  .filter(name => name.length > 0);
-
 // AWS S3 setup
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -28,37 +22,55 @@ AWS.config.update({
 const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
-// Google Vision setup
+// Load Pokémon name list
+const pokemonNames = fs.readFileSync('pokemon_names.txt', 'utf-8')
+  .split('\n')
+  .map(name => name.trim().toLowerCase())
+  .filter(name => name.length > 0);
+
+// Set name keywords
+const setKeywords = [
+  'base set', 'jungle', 'fossil', 'team rocket', 'gym heroes', 'gym challenge',
+  'neo genesis', 'neo discovery', 'neo revelation', 'neo destiny', 'legendary collection',
+  'expedition', 'aquapolis', 'skyridge', 'ex ruby', 'ex sandstorm', 'ex dragon',
+  'ex team magma', 'ex hidden legends', 'ex fire red', 'diamond & pearl',
+  'platinum', 'heartgold', 'black & white', 'xy', 'sun & moon', 'sword & shield',
+  'scarlet & violet', 'celebrations', 'evolving skies', 'chilling reign', 'fusion strike',
+  'vivid voltage', 'battle styles'
+];
+
+// Google Vision client
 const googleCredentials = require('./gcloud-key.json');
 const client = new vision.ImageAnnotatorClient({
   credentials: googleCredentials,
 });
 
-function extractPokemonNameFromText(lines) {
-  const triggerWords = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VMAX', 'VSTAR'];
-
-  for (let i = 0; i < lines.length; i++) {
-    const current = lines[i].trim().toUpperCase();
-
-    // Check for single-line pattern e.g., "BASIC Dratini"
-    for (const keyword of triggerWords) {
-      if (current.startsWith(keyword)) {
-        const possibleName = current.replace(keyword, '').trim();
-        if (pokemonNames.includes(possibleName)) return possibleName;
-
-        // Check next line as name
-        const next = lines[i + 1]?.trim().toUpperCase();
-        if (next && pokemonNames.includes(next)) return next;
-      }
+// Helper: find Pokémon name in text
+function findPokemonName(text) {
+  const lines = text.split('\n');
+  for (let line of lines) {
+    const clean = line.trim().toLowerCase();
+    if (pokemonNames.includes(clean)) {
+      return line.trim(); // preserve original casing
     }
   }
+  return 'Unknown';
+}
 
-  // Fallback: find first known Pokémon name in OCR text
-  for (const line of lines) {
-    const word = line.trim().toUpperCase();
-    if (pokemonNames.includes(word)) return word;
+// Helper: find card number (e.g., 60/102)
+function findCardNumber(text) {
+  const match = text.match(/\b\d{1,3}\/\d{1,3}\b/);
+  return match ? match[0] : 'Unknown';
+}
+
+// Helper: find set name using keywords
+function findSetName(text) {
+  const lowerText = text.toLowerCase();
+  for (let keyword of setKeywords) {
+    if (lowerText.includes(keyword)) {
+      return keyword;
+    }
   }
-
   return 'Unknown';
 }
 
@@ -81,16 +93,19 @@ app.post('/process-card', async (req, res) => {
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR using Google Cloud Vision
+    // OCR analysis
     const [result] = await client.textDetection({ image: { content: buffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
-    const lines = text.split('\n');
-    const cardName = extractPokemonNameFromText(lines);
+    const name = findPokemonName(text);
+    const cardNumber = findCardNumber(text);
+    const setName = findSetName(text);
 
     const cardData = {
-      name: cardName,
+      name,
+      cardNumber,
+      setName,
       fullText: text,
       imageUrl,
     };
