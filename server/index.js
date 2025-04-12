@@ -25,15 +25,59 @@ const BUCKET = process.env.S3_BUCKET_NAME;
 
 // Google Vision setup
 const googleCredentials = require('./gcloud-key.json');
-const client = new vision.ImageAnnotatorClient({ credentials: googleCredentials });
+const client = new vision.ImageAnnotatorClient({
+  credentials: googleCredentials,
+});
 
 // Load Pokémon name list
-const pokemonNames = fs.readFileSync('pokemon-names.txt', 'utf-8')
+const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
   .split('\n')
-  .map(name => name.trim().toLowerCase());
+  .map(name => name.trim().toUpperCase())
+  .filter(name => name.length > 0);
 
-// Evolution stages
-const stages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
+// Valid evolution stages
+const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
+
+// Helper: find card name
+function findPokemonName(text) {
+  const lines = text.split('\n').map(line => line.trim().toUpperCase());
+  for (let line of lines) {
+    if (pokemonNames.includes(line)) {
+      return line;
+    }
+  }
+  return 'Unknown';
+}
+
+// Helper: find evolution stage
+function findEvolutionStage(text) {
+  const lines = text.split('\n').map(line => line.trim().toUpperCase());
+  for (let line of lines) {
+    if (evolutionStages.includes(line)) {
+      return line;
+    }
+  }
+  return 'Unknown';
+}
+
+// Helper: get card price
+async function getCardPrice(cardName) {
+  try {
+    const response = await axios.get(
+      `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
+      {
+        headers: {
+          'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
+        },
+      }
+    );
+    const card = response.data?.data?.[0];
+    return card?.cardmarket?.prices?.averageSellPrice || null;
+  } catch (err) {
+    console.error("💸 Price fetch failed:", err.message);
+    return null;
+  }
+}
 
 // POST /process-card
 app.post('/process-card', async (req, res) => {
@@ -54,63 +98,29 @@ app.post('/process-card', async (req, res) => {
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR with Google Vision
+    // OCR
     const [result] = await client.textDetection({ image: { content: buffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
-    console.log('🔍 OCR text:\n', text);
+    console.log('🔍 Full OCR text:\n', text);
 
-    const lines = text.split('\n').map(line => line.trim());
+    const name = findPokemonName(text);
+    const evolution = findEvolutionStage(text);
+    const price = await getCardPrice(name);
 
-    // Extract Pokémon name
-    let cardName = 'Unknown';
-    for (const line of lines) {
-      const clean = line.toLowerCase();
-      if (pokemonNames.includes(clean)) {
-        cardName = line;
-        break;
-      }
-    }
-
-    // Extract evolution stage
-    let evolutionStage = 'Unknown';
-    for (const line of lines) {
-      const upper = line.toUpperCase();
-      if (stages.includes(upper)) {
-        evolutionStage = upper;
-        break;
-      }
-    }
-
-    console.log('📛 Name:', cardName);
-    console.log('🔁 Stage:', evolutionStage);
-
-    // Query Pokémon TCG API
-    let price = null;
-    if (cardName !== 'Unknown') {
-      const response = await axios.get(
-        `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
-        {
-          headers: {
-            'X-Api-Key': process.env.POKEMON_TCG_API_KEY
-          }
-        }
-      );
-
-      const card = response.data?.data?.[0];
-      if (card?.cardmarket?.prices?.averageSellPrice) {
-        price = card.cardmarket.prices.averageSellPrice;
-      }
-    }
+    // ✅ Server logs
+    console.log('🎴 Card Name:', name);
+    console.log('🌱 Evolution Stage:', evolution);
+    console.log('💰 Price:', price);
 
     const cardData = {
-      name: cardName,
-      evolutionStage,
+      name,
+      evolution,
       price,
       fullText: text,
       imageUrl,
     };
 
-    // Save metadata
+    // Save card metadata
     await s3.putObject({
       Bucket: BUCKET,
       Key: metadataKey,
