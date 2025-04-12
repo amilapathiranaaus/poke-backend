@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 
 dotenv.config();
 
@@ -24,40 +25,15 @@ const BUCKET = process.env.S3_BUCKET_NAME;
 
 // Google Vision setup
 const googleCredentials = require('./gcloud-key.json');
-const client = new vision.ImageAnnotatorClient({
-  credentials: googleCredentials,
-});
+const client = new vision.ImageAnnotatorClient({ credentials: googleCredentials });
 
 // Load Pokémon name list
-const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
+const pokemonNames = fs.readFileSync('pokemon-names.txt', 'utf-8')
   .split('\n')
-  .map(name => name.trim().toUpperCase())
-  .filter(name => name.length > 0);
+  .map(name => name.trim().toLowerCase());
 
-// Valid evolution stages
-const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
-
-// Helper: find card name from OCR
-function findPokemonName(text) {
-  const lines = text.split('\n').map(line => line.trim().toUpperCase());
-  for (let line of lines) {
-    if (pokemonNames.includes(line)) {
-      return line;
-    }
-  }
-  return 'Unknown';
-}
-
-// Helper: find evolution stage
-function findEvolutionStage(text) {
-  const lines = text.split('\n').map(line => line.trim().toUpperCase());
-  for (let line of lines) {
-    if (evolutionStages.includes(line)) {
-      return line;
-    }
-  }
-  return 'Unknown';
-}
+// Evolution stages
+const stages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
 // POST /process-card
 app.post('/process-card', async (req, res) => {
@@ -78,26 +54,63 @@ app.post('/process-card', async (req, res) => {
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR
+    // OCR with Google Vision
     const [result] = await client.textDetection({ image: { content: buffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
-    console.log('🔍 Full OCR text:\n', text);
+    console.log('🔍 OCR text:\n', text);
 
-    const name = findPokemonName(text);
-    const evolution = findEvolutionStage(text);
+    const lines = text.split('\n').map(line => line.trim());
 
-    // ✅ Log to console
-    console.log('🎴 Card Name:', name);
-    console.log('🌱 Evolution Stage:', evolution);
+    // Extract Pokémon name
+    let cardName = 'Unknown';
+    for (const line of lines) {
+      const clean = line.toLowerCase();
+      if (pokemonNames.includes(clean)) {
+        cardName = line;
+        break;
+      }
+    }
+
+    // Extract evolution stage
+    let evolutionStage = 'Unknown';
+    for (const line of lines) {
+      const upper = line.toUpperCase();
+      if (stages.includes(upper)) {
+        evolutionStage = upper;
+        break;
+      }
+    }
+
+    console.log('📛 Name:', cardName);
+    console.log('🔁 Stage:', evolutionStage);
+
+    // Query Pokémon TCG API
+    let price = null;
+    if (cardName !== 'Unknown') {
+      const response = await axios.get(
+        `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
+        {
+          headers: {
+            'X-Api-Key': process.env.POKEMON_TCG_API_KEY
+          }
+        }
+      );
+
+      const card = response.data?.data?.[0];
+      if (card?.cardmarket?.prices?.averageSellPrice) {
+        price = card.cardmarket.prices.averageSellPrice;
+      }
+    }
 
     const cardData = {
-      name,
-      evolution,
+      name: cardName,
+      evolutionStage,
+      price,
       fullText: text,
       imageUrl,
     };
 
-    // Save card metadata
+    // Save metadata
     await s3.putObject({
       Bucket: BUCKET,
       Key: metadataKey,
