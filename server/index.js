@@ -52,6 +52,8 @@ app.post('/process-card', async (req, res) => {
     const [result] = await client.textDetection({ image: { content: buffer } });
 
     const text = result.textAnnotations[0]?.description || 'No text found';
+    console.log('🔍 Full OCR text:\n', text);
+
     const cardName = text.split('\n')[0];
 
     const cardData = {
