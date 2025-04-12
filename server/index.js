@@ -48,7 +48,9 @@ app.post('/process-card', async (req, res) => {
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
     // Analyze with Google Cloud Vision
-    const [result] = await client.textDetection(imageUrl);
+    //const [result] = await client.textDetection(imageUrl);
+    const [result] = await client.textDetection({ image: { content: buffer } });
+
     const text = result.textAnnotations[0]?.description || 'No text found';
     const cardName = text.split('\n')[0];
 
