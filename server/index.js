@@ -4,8 +4,8 @@ const AWS = require('aws-sdk');
 const vision = require('@google-cloud/vision');
 const dotenv = require('dotenv');
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 
 dotenv.config();
 
@@ -22,53 +22,38 @@ AWS.config.update({
 const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
-// Load Pokémon name list
-const pokemonNames = fs.readFileSync('pokemon_names.txt', 'utf-8')
-  .split('\n')
-  .map(name => name.trim().toLowerCase())
-  .filter(name => name.length > 0);
-
-// Set name keywords
-const setKeywords = [
-  'base set', 'jungle', 'fossil', 'team rocket', 'gym heroes', 'gym challenge',
-  'neo genesis', 'neo discovery', 'neo revelation', 'neo destiny', 'legendary collection',
-  'expedition', 'aquapolis', 'skyridge', 'ex ruby', 'ex sandstorm', 'ex dragon',
-  'ex team magma', 'ex hidden legends', 'ex fire red', 'diamond & pearl',
-  'platinum', 'heartgold', 'black & white', 'xy', 'sun & moon', 'sword & shield',
-  'scarlet & violet', 'celebrations', 'evolving skies', 'chilling reign', 'fusion strike',
-  'vivid voltage', 'battle styles'
-];
-
-// Google Vision client
+// Google Vision setup
 const googleCredentials = require('./gcloud-key.json');
 const client = new vision.ImageAnnotatorClient({
   credentials: googleCredentials,
 });
 
-// Helper: find Pokémon name in text
+// Load Pokémon name list
+const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
+  .split('\n')
+  .map(name => name.trim().toUpperCase())
+  .filter(name => name.length > 0);
+
+// Valid evolution stages
+const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
+
+// Helper: find card name from OCR
 function findPokemonName(text) {
-  const lines = text.split('\n');
+  const lines = text.split('\n').map(line => line.trim().toUpperCase());
   for (let line of lines) {
-    const clean = line.trim().toLowerCase();
-    if (pokemonNames.includes(clean)) {
-      return line.trim(); // preserve original casing
+    if (pokemonNames.includes(line)) {
+      return line;
     }
   }
   return 'Unknown';
 }
 
-// Helper: find card number (e.g., 60/102)
-function findCardNumber(text) {
-  const match = text.match(/\b\d{1,3}\/\d{1,3}\b/);
-  return match ? match[0] : 'Unknown';
-}
-
-// Helper: find set name using keywords
-function findSetName(text) {
-  const lowerText = text.toLowerCase();
-  for (let keyword of setKeywords) {
-    if (lowerText.includes(keyword)) {
-      return keyword;
+// Helper: find evolution stage
+function findEvolutionStage(text) {
+  const lines = text.split('\n').map(line => line.trim().toUpperCase());
+  for (let line of lines) {
+    if (evolutionStages.includes(line)) {
+      return line;
     }
   }
   return 'Unknown';
@@ -93,28 +78,26 @@ app.post('/process-card', async (req, res) => {
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR analysis
+    // OCR
     const [result] = await client.textDetection({ image: { content: buffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
     const name = findPokemonName(text);
-    const cardNumber = findCardNumber(text);
-    const setName = findSetName(text);
-    // ✅ Console log details
+    const evolution = findEvolutionStage(text);
+
+    // ✅ Log to console
     console.log('🎴 Card Name:', name);
-    console.log('🔢 Card Number:', cardNumber);
-    console.log('📦 Set Name:', setName);
+    console.log('🌱 Evolution Stage:', evolution);
 
     const cardData = {
       name,
-      cardNumber,
-      setName,
+      evolution,
       fullText: text,
       imageUrl,
     };
 
-    // Save metadata to S3
+    // Save card metadata
     await s3.putObject({
       Bucket: BUCKET,
       Key: metadataKey,
