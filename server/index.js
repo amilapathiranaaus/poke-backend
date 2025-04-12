@@ -38,7 +38,7 @@ const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
 // Valid evolution stages
 const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
-// Helper: find card name
+// Helper: find card namee
 function findPokemonName(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
 
