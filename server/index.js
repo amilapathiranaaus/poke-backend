@@ -41,13 +41,18 @@ const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 // Helper: find card name
 function findPokemonName(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
+
   for (let line of lines) {
-    if (pokemonNames.includes(line)) {
-      return line;
+    for (let name of pokemonNames) {
+      if (line.includes(name)) {
+        return name;
+      }
     }
   }
+
   return 'Unknown';
 }
+
 
 // Helper: find evolution stage
 function findEvolutionStage(text) {
