@@ -1,68 +1,77 @@
 const express = require('express');
 const cors = require('cors');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const AWS = require('aws-sdk');
 const vision = require('@google-cloud/vision');
+const dotenv = require('dotenv');
+const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 
+dotenv.config();
+
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-// Load AWS credentials from environment variables or hardcoded for dev
-const s3 = new S3Client({
-  region: 'YOUR_REGION',
-  credentials: {
-    accessKeyId: 'YOUR_ACCESS_KEY_ID',
-    secretAccessKey: 'YOUR_SECRET_ACCESS_KEY',
-  },
+// AWS S3 setup
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
 });
+const s3 = new AWS.S3();
+const BUCKET = process.env.S3_BUCKET_NAME;
 
-const S3_BUCKET_NAME = 'YOUR_BUCKET_NAME';
-
-// Load Google Vision credentials directly (no env needed)
-const credentials = require('./gcloud-key.json');
+// Google Vision setup (use JSON directly, not path)
+const googleCredentials = require('./gcloud-key.json');
 const client = new vision.ImageAnnotatorClient({
-  credentials: credentials,
+  credentials: googleCredentials,
 });
 
-// Route to generate a signed URL for uploading image
-app.get('/get-signed-url', async (req, res) => {
+// POST /process-card
+app.post('/process-card', async (req, res) => {
   try {
-    const filename = req.query.filename;
-    console.log("Signing upload URL for:", filename);
+    const base64 = req.body.imageBase64.split(',')[1];
+    const buffer = Buffer.from(base64, 'base64');
+    const id = `pokemon-${Date.now()}`;
+    const imageKey = `${id}.jpg`;
+    const metadataKey = `${id}.json`;
 
-    const command = new PutObjectCommand({
-      Bucket: S3_BUCKET_NAME,
-      Key: filename,
+    // Upload image to S3
+    await s3.putObject({
+      Bucket: BUCKET,
+      Key: imageKey,
+      Body: buffer,
       ContentType: 'image/jpeg',
-    });
+    }).promise();
 
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 60 });
-    res.json({ url: signedUrl });
+    const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-  } catch (error) {
-    console.error("🔥 Error in /get-signed-url:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-// Optional: route to use Google Vision on an image URL (future feature)
-app.post('/detect-card', async (req, res) => {
-  try {
-    const { imageUrl } = req.body;
+    // Analyze with Google Cloud Vision
     const [result] = await client.textDetection(imageUrl);
-    const detections = result.textAnnotations;
-    res.json({ detections });
-  } catch (error) {
-    console.error("🔥 Error in /detect-card:", error);
-    res.status(500).json({ error: "Failed to analyze image" });
+    const text = result.textAnnotations[0]?.description || 'No text found';
+    const cardName = text.split('\n')[0];
+
+    const cardData = {
+      name: cardName,
+      fullText: text,
+      imageUrl,
+    };
+
+    // Save card metadata to S3
+    await s3.putObject({
+      Bucket: BUCKET,
+      Key: metadataKey,
+      Body: JSON.stringify(cardData),
+      ContentType: 'application/json',
+    }).promise();
+
+    res.json(cardData);
+  } catch (err) {
+    console.error("❌ Error:", err);
+    res.status(500).json({ error: 'Processing failed' });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Server is running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
