@@ -22,6 +22,8 @@ const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
 // Google Vision setup
+console.log("GOOGLE_APPLICATION_CREDENTIALS =", process.env.GOOGLE_APPLICATION_CREDENTIALS);
+
 const client = new vision.ImageAnnotatorClient({
   keyFilename: path.join(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS),
 });
