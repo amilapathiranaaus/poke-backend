@@ -7,7 +7,11 @@ dist/
 
 # Env files
 .env
+gcloud-key.json
 
+node_modules/
+.env
+*.json
 # OS files
 .DS_Store
 Thumbs.db
