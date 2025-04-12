@@ -28,34 +28,11 @@ const client = new vision.ImageAnnotatorClient({
   credentials: googleCredentials,
 });
 
-// 🔍 Function to intelligently extract card name
-function extractCardNameFromText(text) {
-  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-  let nameCandidate = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Skip too long lines or ones with digits/symbols
-    if (line.length > 20 || /[\d@#\$%\^&\*\(\)\[\]\{\}]/.test(line)) continue;
-
-    // If previous line is a keyword, use this one
-    const prevLine = lines[i - 1]?.toUpperCase();
-    if (['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'].includes(prevLine)) {
-      return line;
-    }
-
-    // If it's a clean, capitalized short phrase, remember it
-    if (
-      /^[A-Z][a-z]+(?: [A-Z][a-z]+)?$/.test(line) &&
-      (lines[i + 1]?.includes('damage') || lines[i + 1]?.length > 10)
-    ) {
-      nameCandidate = line;
-    }
-  }
-
-  return nameCandidate || 'Unknown';
-}
+// Load Pokémon names once at startup
+const pokemonNames = fs.readFileSync('pokemon_names.txt', 'utf-8')
+  .split('\n')
+  .map(name => name.trim().toUpperCase())
+  .filter(Boolean);
 
 // POST /process-card
 app.post('/process-card', async (req, res) => {
@@ -81,7 +58,29 @@ app.post('/process-card', async (req, res) => {
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
-    const cardName = extractCardNameFromText(text);
+    const lines = text.split('\n').map(line => line.trim().toUpperCase());
+    let cardName = 'Unknown';
+
+    // Try matching any line with a known Pokémon name
+    for (let line of lines) {
+      if (pokemonNames.includes(line)) {
+        cardName = line;
+        break;
+      }
+    }
+
+    // Fallback: look for names after BASIC, STAGE 1, etc.
+    if (cardName === 'Unknown') {
+      for (let i = 0; i < lines.length; i++) {
+        if (['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'].includes(lines[i])) {
+          const nextLine = lines[i + 1];
+          if (pokemonNames.includes(nextLine)) {
+            cardName = nextLine;
+            break;
+          }
+        }
+      }
+    }
 
     const cardData = {
       name: cardName,
