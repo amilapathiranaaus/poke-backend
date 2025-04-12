@@ -22,7 +22,7 @@ AWS.config.update({
 const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
-// Google Vision setup (use JSON directly, not path)
+// Google Vision setup
 const googleCredentials = require('./gcloud-key.json');
 const client = new vision.ImageAnnotatorClient({
   credentials: googleCredentials,
@@ -48,13 +48,31 @@ app.post('/process-card', async (req, res) => {
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
     // Analyze with Google Cloud Vision
-    
     const [result] = await client.textDetection({ image: { content: buffer } });
-
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
-    const cardName = text.split('\n')[0];
+    const lines = text.split('\n');
+    let cardName = 'Unknown';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim().toUpperCase();
+      if (['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'].includes(line)) {
+        const nextLine = lines[i + 1]?.trim();
+        if (nextLine && /^[A-Za-z\s\-]+$/.test(nextLine)) {
+          cardName = nextLine;
+          break;
+        }
+      }
+    }
+
+    // Fallback if not found by pattern
+    if (cardName === 'Unknown') {
+      const candidates = lines.filter(line =>
+        /^[A-Za-z\s\-]+$/.test(line.trim()) && line.trim().length < 20
+      );
+      cardName = candidates[0]?.trim() || 'Unknown';
+    }
 
     const cardData = {
       name: cardName,
