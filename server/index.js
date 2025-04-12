@@ -101,6 +101,10 @@ app.post('/process-card', async (req, res) => {
     const name = findPokemonName(text);
     const cardNumber = findCardNumber(text);
     const setName = findSetName(text);
+    // ✅ Console log details
+    console.log('🎴 Card Name:', name);
+    console.log('🔢 Card Number:', cardNumber);
+    console.log('📦 Set Name:', setName);
 
     const cardData = {
       name,
