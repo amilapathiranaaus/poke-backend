@@ -28,6 +28,35 @@ const client = new vision.ImageAnnotatorClient({
   credentials: googleCredentials,
 });
 
+// 🔍 Function to intelligently extract card name
+function extractCardNameFromText(text) {
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  let nameCandidate = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Skip too long lines or ones with digits/symbols
+    if (line.length > 20 || /[\d@#\$%\^&\*\(\)\[\]\{\}]/.test(line)) continue;
+
+    // If previous line is a keyword, use this one
+    const prevLine = lines[i - 1]?.toUpperCase();
+    if (['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'].includes(prevLine)) {
+      return line;
+    }
+
+    // If it's a clean, capitalized short phrase, remember it
+    if (
+      /^[A-Z][a-z]+(?: [A-Z][a-z]+)?$/.test(line) &&
+      (lines[i + 1]?.includes('damage') || lines[i + 1]?.length > 10)
+    ) {
+      nameCandidate = line;
+    }
+  }
+
+  return nameCandidate || 'Unknown';
+}
+
 // POST /process-card
 app.post('/process-card', async (req, res) => {
   try {
@@ -52,27 +81,7 @@ app.post('/process-card', async (req, res) => {
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
-    const lines = text.split('\n');
-    let cardName = 'Unknown';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim().toUpperCase();
-      if (['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'].includes(line)) {
-        const nextLine = lines[i + 1]?.trim();
-        if (nextLine && /^[A-Za-z\s\-]+$/.test(nextLine)) {
-          cardName = nextLine;
-          break;
-        }
-      }
-    }
-
-    // Fallback if not found by pattern
-    if (cardName === 'Unknown') {
-      const candidates = lines.filter(line =>
-        /^[A-Za-z\s\-]+$/.test(line.trim()) && line.trim().length < 20
-      );
-      cardName = candidates[0]?.trim() || 'Unknown';
-    }
+    const cardName = extractCardNameFromText(text);
 
     const cardData = {
       name: cardName,
