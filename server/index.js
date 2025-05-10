@@ -55,11 +55,15 @@ function findPokemonName(text) {
 
 // Helper: find evolution stage
 function findEvolutionStage(text) {
-  const lines = text.split('\n').map(line => line.trim().toUpperCase());
-  for (let line of lines) {
-    if (evolutionStages.includes(line)) {
-      return line;
+  const upperText = text.toUpperCase();
+  for (let stage of evolutionStages) {
+    if (upperText.includes(stage)) {
+      return stage;
     }
+  }
+  // Check for "STAGE" as a partial match
+  if (upperText.includes('STAGE')) {
+    return 'STAGE'; // Adjust based on your needs
   }
   return 'Unknown';
 }
@@ -86,11 +90,34 @@ async function getCardPrice(cardName) {
 // Helper: validate image buffer
 async function isValidImage(buffer) {
   try {
-    await sharp(buffer).metadata(); // Attempt to read image metadata
+    // Check file signature for JPEG
+    if (!buffer.slice(0, 2).equals(Buffer.from([0xff, 0xd8]))) {
+      console.error('🖼️ Invalid JPEG signature');
+      return false;
+    }
+    // Attempt to read metadata and perform a lightweight operation
+    await sharp(buffer).rotate().metadata();
     return true;
   } catch (err) {
     console.error('🖼️ Invalid image buffer:', err.message);
     return false;
+  }
+}
+
+// Helper: save invalid image to S3 for debugging
+async function saveInvalidImage(buffer, id) {
+  try {
+    await s3
+      .putObject({
+        Bucket: BUCKET,
+        Key: `invalid-images/${id}.jpg`,
+        Body: buffer,
+        ContentType: 'image/jpeg',
+      })
+      .promise();
+    console.log(`🖼️ Saved invalid image to S3: invalid-images/${id}.jpg`);
+  } catch (err) {
+    console.error('❌ Failed to save invalid image:', err.message);
   }
 }
 
@@ -104,9 +131,11 @@ app.post('/process-card', async (req, res) => {
 
     const base64 = req.body.imageBase64.split(',')[1];
     const buffer = Buffer.from(base64, 'base64');
+    const id = `pokemon-${Date.now()}`;
 
     // Validate image
     if (!(await isValidImage(buffer))) {
+      await saveInvalidImage(buffer, id);
       return res.status(400).json({ error: 'Invalid or corrupted image' });
     }
 
@@ -125,13 +154,14 @@ app.post('/process-card', async (req, res) => {
           width: shorterSide,
           height: shorterSide,
         })
+        .jpeg({ quality: 80 }) // Ensure JPEG output
         .toBuffer();
     } catch (sharpErr) {
       console.error('🛠️ Sharp cropping failed:', sharpErr.message);
-      // Continue with original buffer to avoid crashing
+      await saveInvalidImage(buffer, id);
+      // Continue with original buffer
     }
 
-    const id = `pokemon-${Date.now()}`;
     const imageKey = `${id}.jpg`;
     const metadataKey = `${id}.json`;
 
