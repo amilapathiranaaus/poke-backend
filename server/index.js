@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const sharp = require('sharp'); // ⬅️ Added sharp!
+const sharp = require('sharp');
 
 dotenv.config();
 
@@ -31,7 +31,8 @@ const client = new vision.ImageAnnotatorClient({
 });
 
 // Load Pokémon name list
-const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
+const pokemonNames = fs
+  .readFileSync('./pokemon_names.txt', 'utf-8')
   .split('\n')
   .map(name => name.trim().toUpperCase())
   .filter(name => name.length > 0);
@@ -77,47 +78,76 @@ async function getCardPrice(cardName) {
     const card = response.data?.data?.[0];
     return card?.cardmarket?.prices?.averageSellPrice || null;
   } catch (err) {
-    console.error("💸 Price fetch failed:", err.message);
+    console.error('💸 Price fetch failed:', err.message);
     return null;
+  }
+}
+
+// Helper: validate image buffer
+async function isValidImage(buffer) {
+  try {
+    await sharp(buffer).metadata(); // Attempt to read image metadata
+    return true;
+  } catch (err) {
+    console.error('🖼️ Invalid image buffer:', err.message);
+    return false;
   }
 }
 
 // POST /process-card
 app.post('/process-card', async (req, res) => {
   try {
+    // Validate base64 input
+    if (!req.body.imageBase64 || !req.body.imageBase64.includes(',')) {
+      return res.status(400).json({ error: 'Invalid base64 image' });
+    }
+
     const base64 = req.body.imageBase64.split(',')[1];
     const buffer = Buffer.from(base64, 'base64');
 
-    // 🛠 Step 1: Light "center crop" with sharp (simulate removing background)
-    const metadata = await sharp(buffer).metadata();
-    const width = metadata.width;
-    const height = metadata.height;
-    const shorterSide = Math.min(width, height);
+    // Validate image
+    if (!(await isValidImage(buffer))) {
+      return res.status(400).json({ error: 'Invalid or corrupted image' });
+    }
 
-    const croppedBuffer = await sharp(buffer)
-      .extract({
-        left: (width - shorterSide) / 2,
-        top: (height - shorterSide) / 2,
-        width: shorterSide,
-        height: shorterSide,
-      })
-      .toBuffer();
+    // 🛠 Step 1: Light "center crop" with sharp (simulate removing background)
+    let croppedBuffer = buffer; // Fallback to original buffer
+    try {
+      const metadata = await sharp(buffer).metadata();
+      const width = metadata.width;
+      const height = metadata.height;
+      const shorterSide = Math.min(width, height);
+
+      croppedBuffer = await sharp(buffer)
+        .extract({
+          left: Math.floor((width - shorterSide) / 2),
+          top: Math.floor((height - shorterSide) / 2),
+          width: shorterSide,
+          height: shorterSide,
+        })
+        .toBuffer();
+    } catch (sharpErr) {
+      console.error('🛠️ Sharp cropping failed:', sharpErr.message);
+      // Continue with original buffer to avoid crashing
+    }
 
     const id = `pokemon-${Date.now()}`;
     const imageKey = `${id}.jpg`;
     const metadataKey = `${id}.json`;
 
-    // Upload cropped image to S3
-    await s3.putObject({
-      Bucket: BUCKET,
-      Key: imageKey,
-      Body: croppedBuffer,
-      ContentType: 'image/jpeg',
-    }).promise();
+    // Upload image to S3 (cropped or original)
+    await s3
+      .putObject({
+        Bucket: BUCKET,
+        Key: imageKey,
+        Body: croppedBuffer,
+        ContentType: 'image/jpeg',
+      })
+      .promise();
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR on cropped image
+    // OCR on image (cropped or original)
     const [result] = await client.textDetection({ image: { content: croppedBuffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
@@ -138,16 +168,18 @@ app.post('/process-card', async (req, res) => {
       imageUrl,
     };
 
-    await s3.putObject({
-      Bucket: BUCKET,
-      Key: metadataKey,
-      Body: JSON.stringify(cardData),
-      ContentType: 'application/json',
-    }).promise();
+    await s3
+      .putObject({
+        Bucket: BUCKET,
+        Key: metadataKey,
+        Body: JSON.stringify(cardData),
+        ContentType: 'application/json',
+      })
+      .promise();
 
     res.json(cardData);
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error('❌ Error:', err.message);
     res.status(500).json({ error: 'Processing failed' });
   }
 });
