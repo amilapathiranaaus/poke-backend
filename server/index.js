@@ -102,7 +102,19 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     });
 
     const cards = response.data?.data || [];
-    console.log('🔎 TCG API cards found:', cards.length);
+    // Log API response
+    console.log('🔎 TCG API Response (specific query):', {
+      query,
+      cardCount: cards.length,
+      cards: cards.map(card => ({
+        name: card.name,
+        number: card.number,
+        setId: card.set.id,
+        setName: card.set.name,
+        setTotal: card.set.total || card.set.printedTotal,
+        price: card.cardmarket?.prices?.averageSellPrice || null,
+      })),
+    });
 
     // Find card matching totalCardsInSet
     let selectedCard = cards[0]; // Default to first card
@@ -115,7 +127,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     }
 
     if (!selectedCard && cardNumber !== 'Unknown') {
-      // Fallback to name-only query if no match
+      // Fallback to name-only query
       console.log('🔎 Falling back to name-only query');
       const fallbackResponse = await axios.get(
         `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
@@ -125,11 +137,31 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
           },
         }
       );
-      selectedCard = fallbackResponse.data?.data?.[0];
+      const fallbackCards = fallbackResponse.data?.data || [];
+      // Log fallback response
+      console.log('🔎 TCG API Response (fallback query):', {
+        query: `name:${encodeURIComponent(cardName)}`,
+        cardCount: fallbackCards.length,
+        cards: fallbackCards.map(card => ({
+          name: card.name,
+          number: card.number,
+          setId: card.set.id,
+          setName: card.set.name,
+          setTotal: card.set.total || card.set.printedTotal,
+          price: card.cardmarket?.prices?.averageSellPrice || null,
+        })),
+      });
+      selectedCard = fallbackCards[0];
     }
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || null;
-    console.log('💰 Selected card:', selectedCard?.name, selectedCard?.number, selectedCard?.set?.id);
+    console.log('💰 Selected card:', {
+      name: selectedCard?.name,
+      number: selectedCard?.number,
+      setId: selectedCard?.set?.id,
+      setName: selectedCard?.set?.name,
+      price,
+    });
     return price;
   } catch (err) {
     console.error('💸 Price fetch failed:', err.message);
