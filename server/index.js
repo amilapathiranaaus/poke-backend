@@ -40,6 +40,12 @@ const pokemonNames = fs
 // Valid evolution stages
 const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
+// Set lookup table
+const setMap = {
+  '203': 'swsh7', // Evolving Skies
+  '198': 'swsh9', // Brilliant Stars
+};
+
 // Helper: find Pokémon name
 function findPokemonName(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
@@ -88,13 +94,21 @@ function findTotalCardsInSet(text) {
 }
 
 // Helper: get card price
-async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
+async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
   try {
-    // Try specific query with name and number
+    // Build specific query
     let query = `name:${encodeURIComponent(cardName)}`;
     if (cardNumber !== 'Unknown') {
       query += ` number:${cardNumber}`;
     }
+    if (setMap[totalCardsInSet]) {
+      query += ` set.id:${setMap[totalCardsInSet]}`;
+    }
+    // Add subtypes for special cards
+    if (text.toUpperCase().includes('EX') || evolutionStages.some(stage => stage !== 'BASIC' && text.toUpperCase().includes(stage))) {
+      query += ' subtypes:ex';
+    }
+
     const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
       headers: {
         'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
@@ -112,17 +126,20 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
         setId: card.set.id,
         setName: card.set.name,
         setTotal: card.set.total || card.set.printedTotal,
-        price: card.cardmarket?.prices?.averageSellPrice || null,
+        rarity: card.rarity,
+        subtypes: card.subtypes,
+        cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
+        tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
       })),
     });
 
     // Find card matching totalCardsInSet
     let selectedCard = cards[0]; // Default to first card
-    if (totalCardsInSet !== 'Unknown' && cards.length > 0) {
+    if (totalCardsInSet !== 'Unknown' && cards.length > 0 && !setMap[totalCardsInSet]) {
       const totalCardsNum = parseInt(totalCardsInSet, 10);
       selectedCard = cards.find(card => {
         const setTotal = card.set.total || card.set.printedTotal || 0;
-        return Math.abs(setTotal - totalCardsNum) <= 10; // Allow small variance
+        return Math.abs(setTotal - totalCardsNum) <= 5; // Stricter variance
       }) || selectedCard;
     }
 
@@ -148,19 +165,26 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
           setId: card.set.id,
           setName: card.set.name,
           setTotal: card.set.total || card.set.printedTotal,
-          price: card.cardmarket?.prices?.averageSellPrice || null,
+          rarity: card.rarity,
+          subtypes: card.subtypes,
+          cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
+          tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
         })),
       });
       selectedCard = fallbackCards[0];
     }
 
-    const price = selectedCard?.cardmarket?.prices?.averageSellPrice || null;
+    const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
       name: selectedCard?.name,
       number: selectedCard?.number,
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
-      price,
+      rarity: selectedCard?.rarity,
+      subtypes: selectedCard?.subtypes,
+      cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
+      tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
+      selectedPrice: price,
     });
     return price;
   } catch (err) {
@@ -245,7 +269,7 @@ app.post('/process-card', async (req, res) => {
     const evolution = findEvolutionStage(text);
     const cardNumber = findCardNumber(text);
     const totalCardsInSet = findTotalCardsInSet(text);
-    const price = await getCardPrice(name, cardNumber, totalCardsInSet);
+    const price = await getCardPrice(name, cardNumber, totalCardsInSet, text);
 
     console.log('🎴 Card Name:', name);
     console.log('🌱 Evolution Stage:', evolution);
