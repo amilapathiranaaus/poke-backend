@@ -54,7 +54,7 @@ function findPokemonName(text) {
 }
 
 
-// Helper: find evolution stage
+// Helper: find evolution stage111
 function findEvolutionStage(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
   for (let line of lines) {
