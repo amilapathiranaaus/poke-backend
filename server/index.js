@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const AWS = require('aws-sdk');
 const vision = require('@google-cloud/vision');
 const dotenv = require('dotenv');
 const { v4: uuidv4 } = require('uuid');
@@ -15,14 +15,13 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// AWS S3 setup (v3)
-const s3 = new S3Client({
+// AWS S3 setup (v2)
+AWS.config.update({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
 });
+const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
 // Google Vision setup
@@ -226,7 +225,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
-      subtypes: selectedCard?.subtypes,
+      subtypes: card.subtypes,
       cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
       tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
       selectedPrice: price,
@@ -258,14 +257,14 @@ async function isValidImage(buffer) {
 // Helper: save invalid image to S3 for debugging
 async function saveInvalidImage(buffer, id) {
   try {
-    await s3.send(
-      new PutObjectCommand({
+    await s3
+      .putObject({
         Bucket: BUCKET,
         Key: `invalid-images/${id}.jpg`,
         Body: buffer,
         ContentType: 'image/jpeg',
       })
-    );
+      .promise();
     console.log(`🖼️ Saved invalid image to S3: invalid-images/${id}.jpg`);
   } catch (err) {
     console.error('❌ Failed to save invalid image:', err.message);
@@ -294,14 +293,14 @@ app.post('/process-card', async (req, res) => {
     const metadataKey = `${id}.json`;
 
     // Upload original image to S3
-    await s3.send(
-      new PutObjectCommand({
+    await s3
+      .putObject({
         Bucket: BUCKET,
         Key: imageKey,
         Body: buffer,
         ContentType: 'image/jpeg',
       })
-    );
+      .promise();
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
@@ -332,14 +331,14 @@ app.post('/process-card', async (req, res) => {
       imageUrl,
     };
 
-    await s3.send(
-      new PutObjectCommand({
+    await s3
+      .putObject({
         Bucket: BUCKET,
         Key: metadataKey,
         Body: JSON.stringify(cardData),
         ContentType: 'application/json',
       })
-    );
+      .promise();
 
     res.json(cardData);
   } catch (err) {
