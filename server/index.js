@@ -40,11 +40,41 @@ const pokemonNames = fs
 // Valid evolution stages
 const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
-// Set lookup table
-const setMap = {
-  '203': 'swsh7', // Evolving Skies
-  '198': 'swsh9', // Brilliant Stars
-};
+// Dynamic set map
+let setMap = {};
+
+// Fetch set data dynamically
+async function fetchSetData() {
+  try {
+    const response = await axios.get('https://api.pokemontcg.io/v2/sets', {
+      headers: {
+        'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
+      },
+    });
+    const sets = response.data?.data || [];
+    console.log(`🌐 Fetched ${sets.length} sets from Pokémon TCG API`);
+    
+    setMap = {};
+    sets.forEach(set => {
+      const total = set.printedTotal || set.total || 0;
+      if (total > 0) {
+        setMap[total.toString()] = set.id;
+      }
+    });
+    
+    console.log('🗺️ Built setMap:', Object.keys(setMap).length, 'entries');
+  } catch (err) {
+    console.error('❌ Failed to fetch set data:', err.message);
+    // Fallback to minimal setMap
+    setMap = {
+      '203': 'swsh7', // Evolving Skies
+      '198': 'swsh9', // Brilliant Stars
+    };
+  }
+}
+
+// Initialize set data on server start
+fetchSetData();
 
 // Helper: find Pokémon name
 function findPokemonName(text) {
