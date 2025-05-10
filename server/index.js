@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
+const sharp = require('sharp'); // ⬅️ Added sharp!
 
 dotenv.config();
 
@@ -38,10 +39,9 @@ const pokemonNames = fs.readFileSync('./pokemon_names.txt', 'utf-8')
 // Valid evolution stages
 const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
-// Helper: find card namee
+// Helper: find Pokémon name
 function findPokemonName(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
-
   for (let line of lines) {
     for (let name of pokemonNames) {
       if (line.includes(name)) {
@@ -49,12 +49,10 @@ function findPokemonName(text) {
       }
     }
   }
-
   return 'Unknown';
 }
 
-
-// Helper: find evolution stage111
+// Helper: find evolution stage
 function findEvolutionStage(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
   for (let line of lines) {
@@ -89,22 +87,38 @@ app.post('/process-card', async (req, res) => {
   try {
     const base64 = req.body.imageBase64.split(',')[1];
     const buffer = Buffer.from(base64, 'base64');
+
+    // 🛠 Step 1: Light "center crop" with sharp (simulate removing background)
+    const metadata = await sharp(buffer).metadata();
+    const width = metadata.width;
+    const height = metadata.height;
+    const shorterSide = Math.min(width, height);
+
+    const croppedBuffer = await sharp(buffer)
+      .extract({
+        left: (width - shorterSide) / 2,
+        top: (height - shorterSide) / 2,
+        width: shorterSide,
+        height: shorterSide,
+      })
+      .toBuffer();
+
     const id = `pokemon-${Date.now()}`;
     const imageKey = `${id}.jpg`;
     const metadataKey = `${id}.json`;
 
-    // Upload image to S3
+    // Upload cropped image to S3
     await s3.putObject({
       Bucket: BUCKET,
       Key: imageKey,
-      Body: buffer,
+      Body: croppedBuffer,
       ContentType: 'image/jpeg',
     }).promise();
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR
-    const [result] = await client.textDetection({ image: { content: buffer } });
+    // OCR on cropped image
+    const [result] = await client.textDetection({ image: { content: croppedBuffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
@@ -112,7 +126,6 @@ app.post('/process-card', async (req, res) => {
     const evolution = findEvolutionStage(text);
     const price = await getCardPrice(name);
 
-    // ✅ Server logs
     console.log('🎴 Card Name:', name);
     console.log('🌱 Evolution Stage:', evolution);
     console.log('💰 Price:', price);
@@ -125,7 +138,6 @@ app.post('/process-card', async (req, res) => {
       imageUrl,
     };
 
-    // Save card metadata
     await s3.putObject({
       Bucket: BUCKET,
       Key: metadataKey,
