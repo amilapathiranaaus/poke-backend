@@ -63,7 +63,7 @@ function findEvolutionStage(text) {
   }
   // Check for "STAGE" as a partial match
   if (upperText.includes('STAGE')) {
-    return 'STAGE'; // Adjust based on your needs
+    return 'STAGE';
   }
   return 'Unknown';
 }
@@ -95,8 +95,8 @@ async function isValidImage(buffer) {
       console.error('🖼️ Invalid JPEG signature');
       return false;
     }
-    // Attempt to read metadata and perform a lightweight operation
-    await sharp(buffer).rotate().metadata();
+    // Attempt to read metadata
+    await sharp(buffer).metadata();
     return true;
   } catch (err) {
     console.error('🖼️ Invalid image buffer:', err.message);
@@ -139,46 +139,23 @@ app.post('/process-card', async (req, res) => {
       return res.status(400).json({ error: 'Invalid or corrupted image' });
     }
 
-    // 🛠 Step 1: Light "center crop" with sharp (simulate removing background)
-    let croppedBuffer = buffer; // Fallback to original buffer
-    try {
-      const metadata = await sharp(buffer).metadata();
-      const width = metadata.width;
-      const height = metadata.height;
-      const shorterSide = Math.min(width, height);
-
-      croppedBuffer = await sharp(buffer)
-        .extract({
-          left: Math.floor((width - shorterSide) / 2),
-          top: Math.floor((height - shorterSide) / 2),
-          width: shorterSide,
-          height: shorterSide,
-        })
-        .jpeg({ quality: 80 }) // Ensure JPEG output
-        .toBuffer();
-    } catch (sharpErr) {
-      console.error('🛠️ Sharp cropping failed:', sharpErr.message);
-      await saveInvalidImage(buffer, id);
-      // Continue with original buffer
-    }
-
     const imageKey = `${id}.jpg`;
     const metadataKey = `${id}.json`;
 
-    // Upload image to S3 (cropped or original)
+    // Upload original image to S3
     await s3
       .putObject({
         Bucket: BUCKET,
         Key: imageKey,
-        Body: croppedBuffer,
+        Body: buffer,
         ContentType: 'image/jpeg',
       })
       .promise();
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
-    // OCR on image (cropped or original)
-    const [result] = await client.textDetection({ image: { content: croppedBuffer } });
+    // OCR on original image
+    const [result] = await client.textDetection({ image: { content: buffer } });
     const text = result.textAnnotations[0]?.description || 'No text found';
     console.log('🔍 Full OCR text:\n', text);
 
