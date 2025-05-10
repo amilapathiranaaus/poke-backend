@@ -73,6 +73,7 @@ async function fetchSetData() {
       '203': 'swsh7', // Evolving Skies
       '198': 'swsh9', // Brilliant Stars
       '189': 'swsh10', // Astral Radiance
+      '072': 'swsh45', // Shining Fates
     };
   }
 }
@@ -118,7 +119,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber; // e.g., "033"
+    return cardNumber; // e.g., "023"
   }
   return 'Unknown';
 }
@@ -128,7 +129,7 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total; // e.g., "189"
+    return total; // e.g., "072"
   }
   return 'Unknown';
 }
@@ -136,6 +137,11 @@ function findTotalCardsInSet(text) {
 // Helper: get card price
 async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
+    // Log unmapped totalCardsInSet
+    if (totalCardsInSet !== 'Unknown' && !setMap[totalCardsInSet]) {
+      console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
+    }
+
     // Build specific query
     let query = `name:${encodeURIComponent(cardName)}`;
     if (cardNumber !== 'Unknown') {
@@ -211,13 +217,14 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
           tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
         })),
       });
-      selectedCard = fallbackCards[0];
+      // Prioritize card matching cardNumber
+      selectedCard = fallbackCards.find(card => card.number === cardNumber) || fallbackCards[0];
     }
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
       name: selectedCard?.name,
-      number: selectedCard?.number,
+      number: MultiSelectPrompt?.number,
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
