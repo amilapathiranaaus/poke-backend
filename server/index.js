@@ -97,19 +97,20 @@ function findPokemonName(text) {
 // Helper: find evolution stage
 function findEvolutionStage(text) {
   const upperText = text.toUpperCase();
-  if (upperText.includes('STAGE2') || upperText.includes('STAGE 2')) {
-    return 'STAGE 2';
+  // Prioritize STAGE 1/STAGE 2 when "Evolves from" is present
+  if (upperText.includes('EVOLVES FROM')) {
+    if (upperText.includes('STAGE2') || upperText.includes('STAGE 2')) {
+      return 'STAGE 2';
+    }
+    if (upperText.includes('STAGE1') || upperText.includes('STAGE 1') || upperText.includes('STAGE')) {
+      return 'STAGE 1';
+    }
   }
-  if (upperText.includes('STAGE1') || upperText.includes('STAGE 1')) {
-    return 'STAGE 1';
-  }
+  // Fallback to other stages
   for (let stage of evolutionStages) {
     if (upperText.includes(stage) && !upperText.includes(`STAGE ${stage}`)) {
       return stage;
     }
-  }
-  if (upperText.includes('STAGE')) {
-    return 'STAGE';
   }
   return 'Unknown';
 }
@@ -224,7 +225,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
       name: selectedCard?.name,
-      number: MultiSelectPrompt?.number,
+      number: selectedCard?.number,
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
