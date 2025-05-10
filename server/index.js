@@ -134,7 +134,7 @@ function findTotalCardsInSet(text) {
 }
 
 // Helper: get card price
-async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
+async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
     // Build specific query
     let query = `name:${encodeURIComponent(cardName)}`;
@@ -143,10 +143,6 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
     }
     if (setMap[totalCardsInSet]) {
       query += ` set.id:${setMap[totalCardsInSet]}`;
-    }
-    // Add subtypes for ex cards only if EX is in text
-    if (text.toUpperCase().includes(' EX')) {
-      query += ' subtypes:ex';
     }
 
     const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
@@ -313,7 +309,7 @@ app.post('/process-card', async (req, res) => {
     const evolution = findEvolutionStage(text);
     const cardNumber = findCardNumber(text);
     const totalCardsInSet = findTotalCardsInSet(text);
-    const price = await getCardPrice(name, cardNumber, totalCardsInSet, text);
+    const price = await getCardPrice(name, cardNumber, totalCardsInSet);
 
     console.log('🎴 Card Name:', name);
     console.log('🌱 Evolution Stage:', evolution);
