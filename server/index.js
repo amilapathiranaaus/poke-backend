@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const vision = require('@google-cloud/vision');
 const dotenv = require('dotenv');
 const { v4: uuidv4 } = require('uuid');
@@ -15,13 +15,14 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// AWS S3 setup
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// AWS S3 setup (v3)
+const s3 = new S3Client({
   region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
 });
-const s3 = new AWS.S3();
 const BUCKET = process.env.S3_BUCKET_NAME;
 
 // Google Vision setup
@@ -53,7 +54,7 @@ async function fetchSetData() {
     });
     const sets = response.data?.data || [];
     console.log(`🌐 Fetched ${sets.length} sets from Pokémon TCG API`);
-    
+
     setMap = {};
     sets.forEach(set => {
       const total = set.printedTotal || set.total || 0;
@@ -61,14 +62,18 @@ async function fetchSetData() {
         setMap[total.toString()] = set.id;
       }
     });
-    
-    console.log('🗺️ Built setMap:', Object.keys(setMap).length, 'entries');
+
+    console.log('🗺️ Built setMap:', {
+      entryCount: Object.keys(setMap).length,
+      totals: Object.keys(setMap).sort((a, b) => a - b),
+    });
   } catch (err) {
     console.error('❌ Failed to fetch set data:', err.message);
     // Fallback to minimal setMap
     setMap = {
       '203': 'swsh7', // Evolving Skies
       '198': 'swsh9', // Brilliant Stars
+      '189': 'swsh10', // Astral Radiance
     };
   }
 }
@@ -92,8 +97,14 @@ function findPokemonName(text) {
 // Helper: find evolution stage
 function findEvolutionStage(text) {
   const upperText = text.toUpperCase();
+  if (upperText.includes('STAGE2') || upperText.includes('STAGE 2')) {
+    return 'STAGE 2';
+  }
+  if (upperText.includes('STAGE1') || upperText.includes('STAGE 1')) {
+    return 'STAGE 1';
+  }
   for (let stage of evolutionStages) {
-    if (upperText.includes(stage)) {
+    if (upperText.includes(stage) && !upperText.includes(`STAGE ${stage}`)) {
       return stage;
     }
   }
@@ -108,7 +119,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber; // e.g., "107"
+    return cardNumber; // e.g., "033"
   }
   return 'Unknown';
 }
@@ -118,7 +129,7 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total; // e.g., "203"
+    return total; // e.g., "189"
   }
   return 'Unknown';
 }
@@ -134,8 +145,8 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
     if (setMap[totalCardsInSet]) {
       query += ` set.id:${setMap[totalCardsInSet]}`;
     }
-    // Add subtypes for special cards
-    if (text.toUpperCase().includes('EX') || evolutionStages.some(stage => stage !== 'BASIC' && text.toUpperCase().includes(stage))) {
+    // Add subtypes for ex cards only if EX is in text
+    if (text.toUpperCase().includes('EX')) {
       query += ' subtypes:ex';
     }
 
@@ -169,15 +180,19 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
       const totalCardsNum = parseInt(totalCardsInSet, 10);
       selectedCard = cards.find(card => {
         const setTotal = card.set.total || card.set.printedTotal || 0;
-        return Math.abs(setTotal - totalCardsNum) <= 5; // Stricter variance
+        return Math.abs(setTotal - totalCardsNum) <= 5;
       }) || selectedCard;
     }
 
     if (!selectedCard && cardNumber !== 'Unknown') {
-      // Fallback to name-only query
+      // Fallback to name-only query with set filter
       console.log('🔎 Falling back to name-only query');
+      let fallbackQuery = `name:${encodeURIComponent(cardName)}`;
+      if (setMap[totalCardsInSet]) {
+        fallbackQuery += ` set.id:${setMap[totalCardsInSet]}`;
+      }
       const fallbackResponse = await axios.get(
-        `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
+        `https://api.pokemontcg.io/v2/cards?q=${fallbackQuery}`,
         {
           headers: {
             'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
@@ -187,7 +202,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
       const fallbackCards = fallbackResponse.data?.data || [];
       // Log fallback response
       console.log('🔎 TCG API Response (fallback query):', {
-        query: `name:${encodeURIComponent(cardName)}`,
+        query: fallbackQuery,
         cardCount: fallbackCards.length,
         cards: fallbackCards.map(card => ({
           name: card.name,
@@ -243,14 +258,14 @@ async function isValidImage(buffer) {
 // Helper: save invalid image to S3 for debugging
 async function saveInvalidImage(buffer, id) {
   try {
-    await s3
-      .putObject({
+    await s3.send(
+      new PutObjectCommand({
         Bucket: BUCKET,
         Key: `invalid-images/${id}.jpg`,
         Body: buffer,
         ContentType: 'image/jpeg',
       })
-      .promise();
+    );
     console.log(`🖼️ Saved invalid image to S3: invalid-images/${id}.jpg`);
   } catch (err) {
     console.error('❌ Failed to save invalid image:', err.message);
@@ -279,14 +294,14 @@ app.post('/process-card', async (req, res) => {
     const metadataKey = `${id}.json`;
 
     // Upload original image to S3
-    await s3
-      .putObject({
+    await s3.send(
+      new PutObjectCommand({
         Bucket: BUCKET,
         Key: imageKey,
         Body: buffer,
         ContentType: 'image/jpeg',
       })
-      .promise();
+    );
 
     const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
 
@@ -317,14 +332,14 @@ app.post('/process-card', async (req, res) => {
       imageUrl,
     };
 
-    await s3
-      .putObject({
+    await s3.send(
+      new PutObjectCommand({
         Bucket: BUCKET,
         Key: metadataKey,
         Body: JSON.stringify(cardData),
         ContentType: 'application/json',
       })
-      .promise();
+    );
 
     res.json(cardData);
   } catch (err) {
@@ -333,5 +348,5 @@ app.post('/process-card', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
