@@ -72,7 +72,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber; // e.g., "107" from "107/203"
+    return cardNumber; // e.g., "107"
   }
   return 'Unknown';
 }
@@ -82,24 +82,55 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total; // e.g., "203" from "107/203"
+    return total; // e.g., "203"
   }
   return 'Unknown';
 }
 
 // Helper: get card price
-async function getCardPrice(cardName) {
+async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
-    const response = await axios.get(
-      `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
-      {
-        headers: {
-          'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
-        },
-      }
-    );
-    const card = response.data?.data?.[0];
-    return card?.cardmarket?.prices?.averageSellPrice || null;
+    // Try specific query with name and number
+    let query = `name:${encodeURIComponent(cardName)}`;
+    if (cardNumber !== 'Unknown') {
+      query += ` number:${cardNumber}`;
+    }
+    const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
+      headers: {
+        'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
+      },
+    });
+
+    const cards = response.data?.data || [];
+    console.log('🔎 TCG API cards found:', cards.length);
+
+    // Find card matching totalCardsInSet
+    let selectedCard = cards[0]; // Default to first card
+    if (totalCardsInSet !== 'Unknown' && cards.length > 0) {
+      const totalCardsNum = parseInt(totalCardsInSet, 10);
+      selectedCard = cards.find(card => {
+        const setTotal = card.set.total || card.set.printedTotal || 0;
+        return Math.abs(setTotal - totalCardsNum) <= 10; // Allow small variance
+      }) || selectedCard;
+    }
+
+    if (!selectedCard && cardNumber !== 'Unknown') {
+      // Fallback to name-only query if no match
+      console.log('🔎 Falling back to name-only query');
+      const fallbackResponse = await axios.get(
+        `https://api.pokemontcg.io/v2/cards?q=name:${encodeURIComponent(cardName)}`,
+        {
+          headers: {
+            'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
+          },
+        }
+      );
+      selectedCard = fallbackResponse.data?.data?.[0];
+    }
+
+    const price = selectedCard?.cardmarket?.prices?.averageSellPrice || null;
+    console.log('💰 Selected card:', selectedCard?.name, selectedCard?.number, selectedCard?.set?.id);
+    return price;
   } catch (err) {
     console.error('💸 Price fetch failed:', err.message);
     return null;
@@ -182,7 +213,7 @@ app.post('/process-card', async (req, res) => {
     const evolution = findEvolutionStage(text);
     const cardNumber = findCardNumber(text);
     const totalCardsInSet = findTotalCardsInSet(text);
-    const price = await getCardPrice(name);
+    const price = await getCardPrice(name, cardNumber, totalCardsInSet);
 
     console.log('🎴 Card Name:', name);
     console.log('🌱 Evolution Stage:', evolution);
