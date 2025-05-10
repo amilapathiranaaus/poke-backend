@@ -145,7 +145,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
       query += ` set.id:${setMap[totalCardsInSet]}`;
     }
     // Add subtypes for ex cards only if EX is in text
-    if (text.toUpperCase().includes('EX')) {
+    if (text.toUpperCase().includes(' EX')) {
       query += ' subtypes:ex';
     }
 
@@ -225,7 +225,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, text) {
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
-      subtypes: card.subtypes,
+      subtypes: selectedCard?.subtypes,
       cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
       tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
       selectedPrice: price,
