@@ -61,9 +61,28 @@ function findEvolutionStage(text) {
       return stage;
     }
   }
-  // Check for "STAGE" as a partial match
   if (upperText.includes('STAGE')) {
     return 'STAGE';
+  }
+  return 'Unknown';
+}
+
+// Helper: find card number
+function findCardNumber(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [cardNumber] = match[0].split('/');
+    return cardNumber; // e.g., "107" from "107/203"
+  }
+  return 'Unknown';
+}
+
+// Helper: find total cards in set
+function findTotalCardsInSet(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [, total] = match[0].split('/');
+    return total; // e.g., "203" from "107/203"
   }
   return 'Unknown';
 }
@@ -161,15 +180,21 @@ app.post('/process-card', async (req, res) => {
 
     const name = findPokemonName(text);
     const evolution = findEvolutionStage(text);
+    const cardNumber = findCardNumber(text);
+    const totalCardsInSet = findTotalCardsInSet(text);
     const price = await getCardPrice(name);
 
     console.log('🎴 Card Name:', name);
     console.log('🌱 Evolution Stage:', evolution);
+    console.log('🔢 Card Number:', cardNumber);
+    console.log('📚 Total Cards in Set:', totalCardsInSet);
     console.log('💰 Price:', price);
 
     const cardData = {
       name,
       evolution,
+      cardNumber,
+      totalCardsInSet,
       price,
       fullText: text,
       imageUrl,
