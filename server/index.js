@@ -66,6 +66,11 @@ async function fetchSetData() {
       entryCount: Object.keys(setMap).length,
       totals: Object.keys(setMap).sort((a, b) => a - b),
     });
+    console.log('🗺️ Available setMap pairs:', Object.entries(setMap).map(([total, id]) => ({
+      setTotal: total,
+      setId: id,
+      setName: sets.find(set => set.id === id)?.name || 'Unknown'
+    })));
   } catch (err) {
     console.error('❌ Failed to fetch set data:', err.message);
     // Fallback to minimal setMap
@@ -75,6 +80,17 @@ async function fetchSetData() {
       '189': 'swsh10', // Astral Radiance
       '072': 'swsh45', // Shining Fates
     };
+    console.log('🗺️ Fallback setMap:', {
+      entryCount: Object.keys(setMap).length,
+      totals: Object.keys(setMap).sort((a, b) => a - b),
+    });
+    console.log('🗺️ Available setMap pairs:', Object.entries(setMap).map(([total, id]) => ({
+      setTotal: total,
+      setId: id,
+      setName: ['swsh7', 'swsh9', 'swsh10', 'swsh45'].includes(id) 
+        ? { swsh7: 'Evolving Skies', swsh9: 'Brilliant Stars', swsh10: 'Astral Radiance', swsh45: 'Shining Fates' }[id]
+        : 'Unknown'
+    })));
   }
 }
 
