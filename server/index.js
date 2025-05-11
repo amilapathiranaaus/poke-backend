@@ -181,32 +181,13 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
     }
 
-    // Build query
-    let query = '';
-    if (cardName && cardName !== 'Unknown') {
-      query += `name:${encodeURIComponent(cardName)}`;
-    }
+    // Build specific query
+    let query = `name:${encodeURIComponent(cardName)}`;
     if (normalizedCardNumber !== 'Unknown') {
-      query += (query ? ' ' : '') + `number:${normalizedCardNumber}`;
+      query += ` number:${normalizedCardNumber}`;
     }
     if (setMap[totalCardsInSet]) {
-      query += (query ? ' ' : '') + `set.id:${setMap[totalCardsInSet]}`;
-    }
-
-    // If query is empty, return null to avoid invalid API call
-    if (!query) {
-      console.warn('⚠️ No valid query parameters provided');
-      return {
-        name: null,
-        number: null,
-        setId: null,
-        setName: null,
-        rarity: null,
-        subtypes: null,
-        cardmarketPrice: null,
-        tcgplayerPrice: null,
-        selectedPrice: null,
-      };
+      query += ` set.id:${setMap[totalCardsInSet]}`;
     }
 
     console.log('🔍 Constructed query:', query);
@@ -280,152 +261,6 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     };
   }
 }
-
-function findPokemonName(text) {
-  const lines = text.split('\n');
-  // Look for the first line that seems like a Pokémon name (all caps, short, no numbers)
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed && /^[A-Z\s-]+$/.test(trimmed) && trimmed.length <= 20 && !/\d/.test(trimmed)) {
-      return trimmed;
-    }
-  }
-  return 'Unknown';
-}
-
-function findCardNumber(text) {
-  const match = text.match(/\d+\/\d+/);
-  if (match) {
-    const [cardNumber] = match[0].split('/');
-    return parseInt(cardNumber, 10).toString(); // e.g., "023" -> "23"
-  }
-  return 'Unknown';
-}
-
-function findTotalCardsInSet(text) {
-  const match = text.match(/\d+\/\d+/);
-  if (match) {
-    const [, total] = match[0].split('/');
-    return total; // e.g., "072"
-  }
-  return 'Unknown';
-}
-
-function findEvolutionStage(text) {
-  const stages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VMAX', 'VSTAR', 'EX', 'GX'];
-  for (const stage of stages) {
-    if (text.toUpperCase().includes(stage)) {
-      return stage;
-    }
-  }
-  return 'Unknown';
-}
-
-//let setMap = {};
-async function fetchSetData() {
-  try {
-    const response = await axios.get('https://api.pokemontcg.io/v2/sets', {
-      headers: { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY },
-    });
-    const sets = response.data?.data || [];
-    setMap = {};
-    sets.forEach(set => {
-      const total = set.printedTotal || set.total || 0;
-      if (total > 0) {
-        setMap[total.toString()] = set.id;
-      }
-    });
-  } catch (err) {
-    console.error('❌ Failed to fetch set data:', err.message);
-    setMap = {
-      '203': 'swsh7', // Evolving Skies
-      '198': 'swsh9', // Brilliant Stars
-      '189': 'swsh10', // Astral Radiance
-      '072': 'swsh45', // Shining Fates
-    };
-  }
-}
-fetchSetData();
-
-app.post('/process-card', async (req, res) => {
-  try {
-    // Validate base64 input
-    if (!req.body.imageBase64 || !req.body.imageBase64.includes(',')) {
-      return res.status(400).json({ error: 'Invalid base64 image' });
-    }
-
-    const base64 = req.body.imageBase64.split(',')[1];
-    const buffer = Buffer.from(base64, 'base64');
-    const id = `pokemon-${Date.now()}`;
-
-    // Validate image
-    if (!(await isValidImage(buffer))) {
-      await saveInvalidImage(buffer, id);
-      return res.status(400).json({ error: 'Invalid or corrupted image' });
-    }
-
-    const imageKey = `${id}.jpg`;
-    const metadataKey = `${id}.json`;
-
-    // Upload original image to S3
-    await s3
-      .putObject({
-        Bucket: BUCKET,
-        Key: imageKey,
-        Body: buffer,
-        ContentType: 'image/jpeg',
-      })
-      .promise();
-
-    const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
-
-    // OCR on original image
-    const [result] = await client.textDetection({ image: { content: buffer } });
-    const text = result.textAnnotations[0]?.description || 'No text found';
-    console.log('🔍 Full OCR text:\n', text);
-
-    const name = findPokemonName(text);
-    const evolution = findEvolutionStage(text);
-    const cardNumber = findCardNumber(text);
-    const totalCardsInSet = findTotalCardsInSet(text);
-    const cardDetails = await getCardPrice(name, cardNumber, totalCardsInSet);
-
-    console.log('🎴 Card Name:', name);
-    console.log('🌱 Evolution Stage:', evolution);
-    console.log('🔢 Card Number:', cardNumber);
-    console.log('📚 Total Cards in Set:', totalCardsInSet);
-    console.log('💰 Card Details:', cardDetails);
-
-    const cardData = {
-      name: cardDetails.name,
-      number: cardDetails.number,
-      setId: cardDetails.setId,
-      setName: cardDetails.setName,
-      rarity: cardDetails.rarity,
-      subtypes: cardDetails.subtypes,
-      cardmarketPrice: cardDetails.cardmarketPrice,
-      tcgplayerPrice: cardDetails.tcgplayerPrice,
-      selectedPrice: cardDetails.selectedPrice,
-      evolution,
-      fullText: text,
-      imageUrl,
-    };
-
-    await s3
-      .putObject({
-        Bucket: BUCKET,
-        Key: metadataKey,
-        Body: JSON.stringify(cardData),
-        ContentType: 'application/json',
-      })
-      .promise();
-
-    res.json(cardData);
-  } catch (err) {
-    console.error('❌ Error:', err.message);
-    res.status(500).json({ error: 'Processing failed' });
-  }
-});
 
 function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
