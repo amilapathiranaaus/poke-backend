@@ -173,28 +173,23 @@ function findTotalCardsInSet(text) {
 // Helper: get card price
 async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
-    // Log setMap state
-    console.log('🛠️ setMap state in getCardPrice:', {
-      size: Object.keys(setMap).length,
-      has072: !!setMap['072']
-    });
+    // Normalize cardNumber by removing leading zeros
+    const normalizedCardNumber = cardNumber !== 'Unknown' ? parseInt(cardNumber, 10).toString() : 'Unknown';
 
     // Log unmapped totalCardsInSet
     if (totalCardsInSet !== 'Unknown' && !setMap[totalCardsInSet]) {
       console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
     }
 
-    // Build specific query with only name, number, and set.id
+    // Build specific query
     let query = `name:${encodeURIComponent(cardName)}`;
-    if (cardNumber !== 'Unknown') {
-      query += ` number:${cardNumber}`;
+    if (normalizedCardNumber !== 'Unknown') {
+      query += ` number:${normalizedCardNumber}`;
     }
     if (setMap[totalCardsInSet]) {
       query += ` set.id:${setMap[totalCardsInSet]}`;
     }
 
-    // Log set ID and query
-    console.log('🔍 Identified set ID:', setMap[totalCardsInSet] || 'None');
     console.log('🔍 Constructed query:', query);
 
     const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
@@ -203,15 +198,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       },
     });
 
-    // Log raw API response
-    console.log('🔎 Raw TCG API Response (specific query):', {
-      query,
-      status: response.status,
-      data: response.data
-    });
-
-    let cards = response.data?.data || [];
-    // Log processed API response
+    const cards = response.data?.data || [];
     console.log('🔎 TCG API Response (specific query):', {
       query,
       cardCount: cards.length,
@@ -228,52 +215,13 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       })),
     });
 
-    // Fallback to name-only query if no cards found
-    if (cards.length === 0 && cardName !== 'Unknown') {
-      const nameOnlyQuery = `name:${encodeURIComponent(cardName)}`;
-      console.log('🛠️ Name-only query:', nameOnlyQuery);
-      const nameOnlyResponse = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${nameOnlyQuery}`, {
-        headers: {
-          'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
-        },
-      });
-      console.log('🛠️ Raw TCG API Response (name-only query):', {
-        query: nameOnlyQuery,
-        status: nameOnlyResponse.status,
-        data: nameOnlyResponse.data
-      });
-      cards = nameOnlyResponse.data?.data || [];
-      console.log('🛠️ TCG API Response (name-only query):', {
-        query: nameOnlyQuery,
-        cardCount: cards.length,
-        cards: cards.map(card => ({
-          name: card.name,
-          number: card.number,
-          setId: card.set.id,
-          setName: card.set.name,
-          setTotal: card.set.total || card.set.printedTotal,
-          rarity: card.rarity,
-          subtypes: card.subtypes,
-          cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
-          tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
-        })),
-      });
-    }
+    // Select the first card or null if no cards are found
+    const selectedCard = cards[0] || null;
 
-    // Select card matching cardNumber and setId, or first card
-    let selectedCard = null;
-    if (cards.length > 0) {
-      const targetSetId = setMap[totalCardsInSet];
-      if (cardNumber !== 'Unknown' && targetSetId) {
-        selectedCard = cards.find(card => 
-          card.number === cardNumber && card.set.id === targetSetId
-        ) || cards[0];
-      } else {
-        selectedCard = cards[0];
-      }
-    }
+    const price = selectedCard?.cardmarket?.prices?.averageSellPrice ||
+                  selectedCard?.tcgplayer?.prices?.normal?.market ||
+                  selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
 
-    const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
       name: selectedCard?.name,
       number: selectedCard?.number,
@@ -285,11 +233,21 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
       selectedPrice: price,
     });
+
     return price;
   } catch (err) {
     console.error('💸 Price fetch failed:', err.message);
     return null;
   }
+}
+
+function findCardNumber(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [cardNumber] = match[0].split('/');
+    return parseInt(cardNumber, 10).toString(); // e.g., "023" -> "23"
+  }
+  return 'Unknown';
 }
 
 // Helper: validate image buffer
