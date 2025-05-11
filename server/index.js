@@ -155,7 +155,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber.padStart(3, '0'); // e.g., "23" -> "023"
+    return cardNumber; // e.g., "23"
   }
   return 'Unknown';
 }
@@ -165,7 +165,7 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total.padStart(3, '0'); // e.g., "72" -> "072"
+    return total; // e.g., "72"
   }
   return 'Unknown';
 }
@@ -260,8 +260,18 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       });
     }
 
-    // Select first card or null if none found
-    let selectedCard = cards[0] || null;
+    // Select card matching cardNumber and setId, or first card
+    let selectedCard = null;
+    if (cards.length > 0) {
+      const targetSetId = setMap[totalCardsInSet];
+      if (cardNumber !== 'Unknown' && targetSetId) {
+        selectedCard = cards.find(card => 
+          card.number === cardNumber && card.set.id === targetSetId
+        ) || cards[0];
+      } else {
+        selectedCard = cards[0];
+      }
+    }
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
