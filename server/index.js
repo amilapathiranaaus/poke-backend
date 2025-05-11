@@ -209,7 +209,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
         setName: card.set.name,
         setTotal: card.set.total || card.set.printedTotal,
         rarity: card.rarity,
-        subtypes: card.subtypes,
+        subtypes: card.subtypes, // Log the full subtypes array
         cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
         tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
       })),
@@ -228,7 +228,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
-      subtypes: selectedCard?.subtypes,
+      subtypes: selectedCard?.subtypes, // Log the full subtypes array
       cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
       tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
       selectedPrice: price,
@@ -239,6 +239,15 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     console.error('💸 Price fetch failed:', err.message);
     return null;
   }
+}
+
+function findCardNumber(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [cardNumber] = match[0].split('/');
+    return parseInt(cardNumber, 10).toString(); // e.g., "023" -> "23"
+  }
+  return 'Unknown';
 }
 
 function findCardNumber(text) {
