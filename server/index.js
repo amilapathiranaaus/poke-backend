@@ -136,6 +136,9 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     });
 
     const cards = response.data?.data || [];
+
+    console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2)); // <<== LOG FULL RESPONSE
+
     const selectedCard = cards[0] || null;
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice ||
@@ -168,6 +171,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     };
   }
 }
+
 
 async function isValidImage(buffer) {
   try {
