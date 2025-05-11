@@ -73,7 +73,6 @@ async function fetchSetData() {
       '203': 'swsh7', // Evolving Skies
       '198': 'swsh9', // Brilliant Stars
       '189': 'swsh10', // Astral Radiance
-      '072': 'swsh45', // Shining Fates
     };
   }
 }
@@ -97,20 +96,19 @@ function findPokemonName(text) {
 // Helper: find evolution stage
 function findEvolutionStage(text) {
   const upperText = text.toUpperCase();
-  // Prioritize STAGE 1/STAGE 2 when "Evolves from" is present
-  if (upperText.includes('EVOLVES FROM')) {
-    if (upperText.includes('STAGE2') || upperText.includes('STAGE 2')) {
-      return 'STAGE 2';
-    }
-    if (upperText.includes('STAGE1') || upperText.includes('STAGE 1') || upperText.includes('STAGE')) {
-      return 'STAGE 1';
-    }
+  if (upperText.includes('STAGE2') || upperText.includes('STAGE 2')) {
+    return 'STAGE 2';
   }
-  // Fallback to other stages
+  if (upperText.includes('STAGE1') || upperText.includes('STAGE 1')) {
+    return 'STAGE 1';
+  }
   for (let stage of evolutionStages) {
     if (upperText.includes(stage) && !upperText.includes(`STAGE ${stage}`)) {
       return stage;
     }
+  }
+  if (upperText.includes('STAGE')) {
+    return 'STAGE';
   }
   return 'Unknown';
 }
@@ -120,7 +118,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber; // e.g., "023"
+    return cardNumber; // e.g., "033"
   }
   return 'Unknown';
 }
@@ -130,7 +128,7 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total; // e.g., "072"
+    return total; // e.g., "189"
   }
   return 'Unknown';
 }
@@ -138,11 +136,6 @@ function findTotalCardsInSet(text) {
 // Helper: get card price
 async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
-    // Log unmapped totalCardsInSet
-    if (totalCardsInSet !== 'Unknown' && !setMap[totalCardsInSet]) {
-      console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
-    }
-
     // Build specific query
     let query = `name:${encodeURIComponent(cardName)}`;
     if (cardNumber !== 'Unknown') {
@@ -218,8 +211,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
           tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
         })),
       });
-      // Prioritize card matching cardNumber
-      selectedCard = fallbackCards.find(card => card.number === cardNumber) || fallbackCards[0];
+      selectedCard = fallbackCards[0];
     }
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
