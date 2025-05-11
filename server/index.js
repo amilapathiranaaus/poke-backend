@@ -40,8 +40,19 @@ const pokemonNames = fs
 // Valid evolution stages
 const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
-// Dynamic set map
-let setMap = {};
+// Dynamic set map with initial fallback
+let setMap = {
+  '203': 'swsh7', // Evolving Skies
+  '198': 'swsh9', // Brilliant Stars
+  '189': 'swsh10', // Astral Radiance
+  '072': 'swsh45', // Shining Fates
+};
+
+// Log initial setMap state
+console.log('🛠️ Initial setMap state:', {
+  size: Object.keys(setMap).length,
+  has072: !!setMap['072']
+});
 
 // Fetch set data dynamically
 async function fetchSetData() {
@@ -54,13 +65,15 @@ async function fetchSetData() {
     const sets = response.data?.data || [];
     console.log(`🌐 Fetched ${sets.length} sets from Pokémon TCG API`);
 
-    setMap = {};
+    const newSetMap = {};
     sets.forEach(set => {
       const total = set.printedTotal || set.total || 0;
       if (total > 0) {
-        setMap[total.toString()] = set.id;
+        newSetMap[total.toString()] = set.id;
       }
     });
+
+    setMap = { ...setMap, ...newSetMap };
 
     console.log('🗺️ Built setMap:', {
       entryCount: Object.keys(setMap).length,
@@ -71,26 +84,27 @@ async function fetchSetData() {
       setId: id,
       setName: sets.find(set => set.id === id)?.name || 'Unknown'
     })));
+    console.log('🛠️ Post-fetch setMap state:', {
+      size: Object.keys(setMap).length,
+      has072: !!setMap['072']
+    });
   } catch (err) {
     console.error('❌ Failed to fetch set data:', err.message);
-    // Fallback to minimal setMap
-    setMap = {
-      '203': 'swsh7', // Evolving Skies
-      '198': 'swsh9', // Brilliant Stars
-      '189': 'swsh10', // Astral Radiance
-      '072': 'swsh45', // Shining Fates
-    };
-    console.log('🗺️ Fallback setMap:', {
+    console.log('🗺️ Using fallback setMap:', {
       entryCount: Object.keys(setMap).length,
       totals: Object.keys(setMap).sort((a, b) => a - b),
     });
     console.log('🗺️ Available setMap pairs:', Object.entries(setMap).map(([total, id]) => ({
       setTotal: total,
       setId: id,
-      setName: ['swsh7', 'swsh9', 'swsh10', 'swsh45'].includes(id) 
+      setName: ['swsh7', 'swsh9', 'swsh10', 'swsh45'].includes(id)
         ? { swsh7: 'Evolving Skies', swsh9: 'Brilliant Stars', swsh10: 'Astral Radiance', swsh45: 'Shining Fates' }[id]
         : 'Unknown'
     })));
+    console.log('🛠️ Post-fallback setMap state:', {
+      size: Object.keys(setMap).length,
+      has072: !!setMap['072']
+    });
   }
 }
 
@@ -154,6 +168,12 @@ function findTotalCardsInSet(text) {
 // Helper: get card price
 async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
+    // Log setMap state
+    console.log('🛠️ setMap state in getCardPrice:', {
+      size: Object.keys(setMap).length,
+      has072: !!setMap['072']
+    });
+
     // Log unmapped totalCardsInSet
     if (totalCardsInSet !== 'Unknown' && !setMap[totalCardsInSet]) {
       console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
