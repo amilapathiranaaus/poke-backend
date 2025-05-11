@@ -111,13 +111,18 @@ async function fetchSetData() {
 // Initialize set data on server start
 fetchSetData();
 
+// Helper: convert to title case
+function toTitleCase(str) {
+  return str.toLowerCase().replace(/(^|\s)\w/g, letter => letter.toUpperCase());
+}
+
 // Helper: find Pokémon name
 function findPokemonName(text) {
   const lines = text.split('\n').map(line => line.trim().toUpperCase());
   for (let line of lines) {
     for (let name of pokemonNames) {
       if (line.includes(name)) {
-        return name;
+        return toTitleCase(name); // Return title case, e.g., "Floatzel"
       }
     }
   }
@@ -150,7 +155,7 @@ function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [cardNumber] = match[0].split('/');
-    return cardNumber; // e.g., "023"
+    return cardNumber.padStart(3, '0'); // e.g., "23" -> "023"
   }
   return 'Unknown';
 }
@@ -160,7 +165,7 @@ function findTotalCardsInSet(text) {
   const match = text.match(/\d+\/\d+/);
   if (match) {
     const [, total] = match[0].split('/');
-    return total; // e.g., "072"
+    return total.padStart(3, '0'); // e.g., "72" -> "072"
   }
   return 'Unknown';
 }
@@ -198,8 +203,15 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       },
     });
 
-    const cards = response.data?.data || [];
-    // Log API response
+    // Log raw API response
+    console.log('🔎 Raw TCG API Response (specific query):', {
+      query,
+      status: response.status,
+      data: response.data
+    });
+
+    let cards = response.data?.data || [];
+    // Log processed API response
     console.log('🔎 TCG API Response (specific query):', {
       query,
       cardCount: cards.length,
@@ -215,6 +227,38 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
         tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
       })),
     });
+
+    // Fallback to name-only query if no cards found
+    if (cards.length === 0 && cardName !== 'Unknown') {
+      const nameOnlyQuery = `name:${encodeURIComponent(cardName)}`;
+      console.log('🛠️ Name-only query:', nameOnlyQuery);
+      const nameOnlyResponse = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${nameOnlyQuery}`, {
+        headers: {
+          'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
+        },
+      });
+      console.log('🛠️ Raw TCG API Response (name-only query):', {
+        query: nameOnlyQuery,
+        status: nameOnlyResponse.status,
+        data: nameOnlyResponse.data
+      });
+      cards = nameOnlyResponse.data?.data || [];
+      console.log('🛠️ TCG API Response (name-only query):', {
+        query: nameOnlyQuery,
+        cardCount: cards.length,
+        cards: cards.map(card => ({
+          name: card.name,
+          number: card.number,
+          setId: card.set.id,
+          setName: card.set.name,
+          setTotal: card.set.total || card.set.printedTotal,
+          rarity: card.rarity,
+          subtypes: card.subtypes,
+          cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
+          tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
+        })),
+      });
+    }
 
     // Select first card or null if none found
     let selectedCard = cards[0] || null;
