@@ -120,13 +120,15 @@ function findTotalCardsInSet(text) {
 async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
   try {
     const normalizedCardNumber = cardNumber !== 'Unknown' ? parseInt(cardNumber, 10).toString() : 'Unknown';
-    let query = `name:${encodeURIComponent(cardName)}`;
+
+    let query = '';
 
     if (normalizedCardNumber !== 'Unknown') {
-      query += ` number:${normalizedCardNumber}`;
+      query += `number:${normalizedCardNumber}`;
     }
     if (setMap[totalCardsInSet]) {
-      query += ` set.id:${setMap[totalCardsInSet]}`;
+      if (query) query += ' ';
+      query += `set.id:${setMap[totalCardsInSet]}`;
     }
 
     console.log('🔍 Query:', query);
@@ -137,7 +139,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
 
     const cards = response.data?.data || [];
 
-    console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2)); // <<== LOG FULL RESPONSE
+    console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2)); // Full API response
 
     const selectedCard = cards[0] || null;
 
