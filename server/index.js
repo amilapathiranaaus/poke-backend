@@ -152,6 +152,10 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       query += ` set.id:${setMap[totalCardsInSet]}`;
     }
 
+    // Log set ID and query
+    console.log('🔍 Identified set ID:', setMap[totalCardsInSet] || 'None');
+    console.log('🔍 Constructed query:', query);
+
     const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
       headers: {
         'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
@@ -176,51 +180,8 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       })),
     });
 
-    // Find card matching totalCardsInSet
-    let selectedCard = cards[0]; // Default to first card
-    if (totalCardsInSet !== 'Unknown' && cards.length > 0 && !setMap[totalCardsInSet]) {
-      const totalCardsNum = parseInt(totalCardsInSet, 10);
-      selectedCard = cards.find(card => {
-        const setTotal = card.set.total || card.set.printedTotal || 0;
-        return Math.abs(setTotal - totalCardsNum) <= 5;
-      }) || selectedCard;
-    }
-
-    if (!selectedCard && cardNumber !== 'Unknown') {
-      // Fallback to name and set.id query
-      console.log('🔎 Falling back to name and set.id query');
-      let fallbackQuery = `name:${encodeURIComponent(cardName)}`;
-      if (setMap[totalCardsInSet]) {
-        fallbackQuery += ` set.id:${setMap[totalCardsInSet]}`;
-      }
-      const fallbackResponse = await axios.get(
-        `https://api.pokemontcg.io/v2/cards?q=${fallbackQuery}`,
-        {
-          headers: {
-            'X-Api-Key': process.env.POKEMON_TCG_API_KEY,
-          },
-        }
-      );
-      const fallbackCards = fallbackResponse.data?.data || [];
-      // Log fallback response
-      console.log('🔎 TCG API Response (fallback query):', {
-        query: fallbackQuery,
-        cardCount: fallbackCards.length,
-        cards: fallbackCards.map(card => ({
-          name: card.name,
-          number: card.number,
-          setId: card.set.id,
-          setName: card.set.name,
-          setTotal: card.set.total || card.set.printedTotal,
-          rarity: card.rarity,
-          subtypes: card.subtypes,
-          cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
-          tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
-        })),
-      });
-      // Prioritize card matching cardNumber
-      selectedCard = fallbackCards.find(card => card.number === cardNumber) || fallbackCards[0];
-    }
+    // Select first card or null if none found
+    let selectedCard = cards[0] || null;
 
     const price = selectedCard?.cardmarket?.prices?.averageSellPrice || selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null;
     console.log('💰 Selected card:', {
