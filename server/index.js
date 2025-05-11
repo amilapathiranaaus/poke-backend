@@ -143,7 +143,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       console.warn(`⚠️ No setMap entry for totalCardsInSet: ${totalCardsInSet}`);
     }
 
-    // Build specific query
+    // Build specific query with only name, number, and set.id
     let query = `name:${encodeURIComponent(cardName)}`;
     if (cardNumber !== 'Unknown') {
       query += ` number:${cardNumber}`;
@@ -187,8 +187,8 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     }
 
     if (!selectedCard && cardNumber !== 'Unknown') {
-      // Fallback to name-only query with set filter
-      console.log('🔎 Falling back to name-only query');
+      // Fallback to name and set.id query
+      console.log('🔎 Falling back to name and set.id query');
       let fallbackQuery = `name:${encodeURIComponent(cardName)}`;
       if (setMap[totalCardsInSet]) {
         fallbackQuery += ` set.id:${setMap[totalCardsInSet]}`;
