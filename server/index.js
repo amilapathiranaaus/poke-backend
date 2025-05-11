@@ -268,6 +268,15 @@ function findCardNumber(text) {
   return 'Unknown';
 }
 
+function findCardNumber(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [cardNumber] = match[0].split('/');
+    return parseInt(cardNumber, 10).toString(); // e.g., "023" -> "23"
+  }
+  return 'Unknown';
+}
+
 // Helper: validate image buffer
 async function isValidImage(buffer) {
   try {
