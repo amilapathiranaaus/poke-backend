@@ -209,7 +209,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
         setName: card.set.name,
         setTotal: card.set.total || card.set.printedTotal,
         rarity: card.rarity,
-        subtypes: card.subtypes, // Log the full subtypes array
+        subtypes: card.subtypes,
         cardmarketPrice: card.cardmarket?.prices?.averageSellPrice || null,
         tcgplayerPrice: card.tcgplayer?.prices?.normal?.market || card.tcgplayer?.prices?.holofoil?.market || null,
       })),
@@ -228,18 +228,128 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
       setId: selectedCard?.set?.id,
       setName: selectedCard?.set?.name,
       rarity: selectedCard?.rarity,
-      subtypes: selectedCard?.subtypes, // Log the full subtypes array
+      subtypes: selectedCard?.subtypes,
       cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
       tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
       selectedPrice: price,
     });
 
-    return price;
+    // Return object with requested fields
+    return {
+      name: selectedCard?.name || null,
+      number: selectedCard?.number || null,
+      setId: selectedCard?.set?.id || null,
+      setName: selectedCard?.set?.name || null,
+      rarity: selectedCard?.rarity || null,
+      subtypes: selectedCard?.subtypes || null,
+      cardmarketPrice: selectedCard?.cardmarket?.prices?.averageSellPrice || null,
+      tcgplayerPrice: selectedCard?.tcgplayer?.prices?.normal?.market || selectedCard?.tcgplayer?.prices?.holofoil?.market || null,
+      selectedPrice: price,
+    };
   } catch (err) {
     console.error('💸 Price fetch failed:', err.message);
-    return null;
+    return {
+      name: null,
+      number: null,
+      setId: null,
+      setName: null,
+      rarity: null,
+      subtypes: null,
+      cardmarketPrice: null,
+      tcgplayerPrice: null,
+      selectedPrice: null,
+    };
   }
 }
+
+function findCardNumber(text) {
+  const match = text.match(/\d+\/\d+/);
+  if (match) {
+    const [cardNumber] = match[0].split('/');
+    return parseInt(cardNumber, 10).toString(); // e.g., "023" -> "23"
+  }
+  return 'Unknown';
+}
+
+app.post('/process-card', async (req, res) => {
+  try {
+    // Validate base64 input
+    if (!req.body.imageBase64 || !req.body.imageBase64.includes(',')) {
+      return res.status(400).json({ error: 'Invalid base64 image' });
+    }
+
+    const base64 = req.body.imageBase64.split(',')[1];
+    const buffer = Buffer.from(base64, 'base64');
+    const id = `pokemon-${Date.now()}`;
+
+    // Validate image
+    if (!(await isValidImage(buffer))) {
+      await saveInvalidImage(buffer, id);
+      return res.status(400).json({ error: 'Invalid or corrupted image' });
+    }
+
+    const imageKey = `${id}.jpg`;
+    const metadataKey = `${id}.json`;
+
+    // Upload original image to S3
+    await s3
+      .putObject({
+        Bucket: BUCKET,
+        Key: imageKey,
+        Body: buffer,
+        ContentType: 'image/jpeg',
+      })
+      .promise();
+
+    const imageUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${imageKey}`;
+
+    // OCR on original image
+    const [result] = await client.textDetection({ image: { content: buffer } });
+    const text = result.textAnnotations[0]?.description || 'No text found';
+    console.log('🔍 Full OCR text:\n', text);
+
+    const name = findPokemonName(text);
+    const evolution = findEvolutionStage(text);
+    const cardNumber = findCardNumber(text);
+    const totalCardsInSet = findTotalCardsInSet(text);
+    const cardDetails = await getCardPrice(name, cardNumber, totalCardsInSet);
+
+    console.log('🎴 Card Name:', name);
+    console.log('🌱 Evolution Stage:', evolution);
+    console.log('🔢 Card Number:', cardNumber);
+    console.log('📚 Total Cards in Set:', totalCardsInSet);
+    console.log('💰 Card Details:', cardDetails);
+
+    const cardData = {
+      name: cardDetails.name,
+      number: cardDetails.number,
+      setId: cardDetails.setId,
+      setName: cardDetails.setName,
+      rarity: cardDetails.rarity,
+      subtypes: cardDetails.subtypes,
+      cardmarketPrice: cardDetails.cardmarketPrice,
+      tcgplayerPrice: cardDetails.tcgplayerPrice,
+      selectedPrice: cardDetails.selectedPrice,
+      evolution,
+      fullText: text,
+      imageUrl,
+    };
+
+    await s3
+      .putObject({
+        Bucket: BUCKET,
+        Key: metadataKey,
+        Body: JSON.stringify(cardData),
+        ContentType: 'application/json',
+      })
+      .promise();
+
+    res.json(cardData);
+  } catch (err) {
+    console.error('❌ Error:', err.message);
+    res.status(500).json({ error: 'Processing failed' });
+  }
+});
 
 function findCardNumber(text) {
   const match = text.match(/\d+\/\d+/);
