@@ -40,13 +40,12 @@ const evolutionStages = ['BASIC', 'STAGE 1', 'STAGE 2', 'V', 'VSTAR', 'VMAX'];
 
 // Set map
 let setMap = {
-  '203': 'swsh7', // Evolving Skies
-  '198': 'swsh9', // Brilliant Stars
-  '189': 'swsh10', // Astral Radiance
-  '072': 'swsh45', // Shining Fates
+  '203': 'swsh7',
+  '198': 'swsh9',
+  '189': 'swsh10',
+  '072': 'swsh45',
 };
 
-// Fetch Pokémon TCG set data
 async function fetchSetData() {
   try {
     const response = await axios.get('https://api.pokemontcg.io/v2/sets', {
@@ -113,7 +112,7 @@ function extractCardInfo(text) {
 
   const normalMatch = text.match(/\b(\d{1,3})\/(\d{1,3})\b/);
   if (normalMatch) {
-    const cardNumber = normalMatch[1];
+    let cardNumber = normalMatch[1].replace(/^0+/, ''); // 🧹 REMOVE LEADING ZEROS
     const totalCards = normalMatch[2];
     return { cardNumber, totalCardsInSet: totalCards, setId: null };
   }
@@ -129,19 +128,17 @@ function extractCardInfo(text) {
   return { cardNumber: null, totalCardsInSet: null, setId: null };
 }
 
-async function getCardPrice(cardName, cardNumber, totalCardsInSet, setIdFromPromo = null) {
+async function getCardPrice(cardNumber, totalCardsInSet, overrideSetId = null) {
   try {
-    const normalizedCardNumber = cardNumber !== 'Unknown' && cardNumber !== null ? cardNumber.toString() : 'Unknown';
-
     let query = '';
 
-    if (normalizedCardNumber !== 'Unknown') {
-      query += `number:${normalizedCardNumber}`;
+    if (cardNumber) {
+      query += `number:${cardNumber}`;
     }
 
-    if (setIdFromPromo) {
+    if (overrideSetId) {
       if (query) query += ' ';
-      query += `set.id:${setIdFromPromo}`;
+      query += `set.id:${overrideSetId}`;
     } else if (setMap[totalCardsInSet]) {
       if (query) query += ' ';
       query += `set.id:${setMap[totalCardsInSet]}`;
@@ -154,7 +151,6 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, setIdFromProm
     });
 
     const cards = response.data?.data || [];
-
     console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2));
 
     const selectedCard = cards[0] || null;
@@ -254,8 +250,8 @@ app.post('/process-card', async (req, res) => {
 
     const name = findPokemonName(text);
     const evolution = findEvolutionStage(text);
-    const { cardNumber, totalCardsInSet, setId } = extractCardInfo(text);
-    const cardDetails = await getCardPrice(name, cardNumber, totalCardsInSet, setId);
+    const { cardNumber, totalCardsInSet, setId: overrideSetId } = extractCardInfo(text);
+    const cardDetails = await getCardPrice(cardNumber, totalCardsInSet, overrideSetId);
 
     const cardData = {
       name: cardDetails.name,
