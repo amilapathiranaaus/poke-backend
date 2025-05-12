@@ -99,34 +99,50 @@ function findEvolutionStage(text) {
   return 'Unknown';
 }
 
-function findCardNumber(text) {
-  const match = text.match(/\d+\/\d+/);
-  if (match) {
-    const [cardNumber] = match[0].split('/');
-    return parseInt(cardNumber, 10).toString();
+function extractCardInfo(text) {
+  const promoPrefixToSetId = {
+    SWSH: 'swshp',
+    SM: 'smp',
+    XY: 'xyp',
+    BW: 'bwp',
+    DP: 'dpp',
+    HGSS: 'hgssp',
+  };
+
+  text = text.toUpperCase();
+
+  const normalMatch = text.match(/\b(\d{1,3})\/(\d{1,3})\b/);
+  if (normalMatch) {
+    const cardNumber = normalMatch[1];
+    const totalCards = normalMatch[2];
+    return { cardNumber, totalCardsInSet: totalCards, setId: null };
   }
-  return 'Unknown';
+
+  const promoMatch = text.match(/\b(SWSH|SM|XY|BW|DP|HGSS)(\d{1,4})\b/);
+  if (promoMatch) {
+    const prefix = promoMatch[1];
+    const number = promoMatch[1] + promoMatch[2];
+    const setId = promoPrefixToSetId[prefix] || null;
+    return { cardNumber: number, totalCardsInSet: null, setId };
+  }
+
+  return { cardNumber: null, totalCardsInSet: null, setId: null };
 }
 
-function findTotalCardsInSet(text) {
-  const match = text.match(/\d+\/\d+/);
-  if (match) {
-    const [, total] = match[0].split('/');
-    return parseInt(total, 10).toString();
-  }
-  return 'Unknown';
-}
-
-async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
+async function getCardPrice(cardName, cardNumber, totalCardsInSet, setIdFromPromo = null) {
   try {
-    const normalizedCardNumber = cardNumber !== 'Unknown' ? parseInt(cardNumber, 10).toString() : 'Unknown';
+    const normalizedCardNumber = cardNumber !== 'Unknown' && cardNumber !== null ? cardNumber.toString() : 'Unknown';
 
     let query = '';
 
     if (normalizedCardNumber !== 'Unknown') {
       query += `number:${normalizedCardNumber}`;
     }
-    if (setMap[totalCardsInSet]) {
+
+    if (setIdFromPromo) {
+      if (query) query += ' ';
+      query += `set.id:${setIdFromPromo}`;
+    } else if (setMap[totalCardsInSet]) {
       if (query) query += ' ';
       query += `set.id:${setMap[totalCardsInSet]}`;
     }
@@ -139,7 +155,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
 
     const cards = response.data?.data || [];
 
-    console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2)); // Full API response
+    console.log('📦 API Response Cards:', JSON.stringify(cards, null, 2));
 
     const selectedCard = cards[0] || null;
 
@@ -173,7 +189,6 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet) {
     };
   }
 }
-
 
 async function isValidImage(buffer) {
   try {
@@ -239,9 +254,8 @@ app.post('/process-card', async (req, res) => {
 
     const name = findPokemonName(text);
     const evolution = findEvolutionStage(text);
-    const cardNumber = findCardNumber(text);
-    const totalCardsInSet = findTotalCardsInSet(text);
-    const cardDetails = await getCardPrice(name, cardNumber, totalCardsInSet);
+    const { cardNumber, totalCardsInSet, setId } = extractCardInfo(text);
+    const cardDetails = await getCardPrice(name, cardNumber, totalCardsInSet, setId);
 
     const cardData = {
       name: cardDetails.name,
