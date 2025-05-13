@@ -9,7 +9,7 @@ dist/
 .env
 node_modules/
 .env
-*.json
+
 # OS files
 .DS_Store
 Thumbs.db
