@@ -252,7 +252,6 @@ app.post('/process-card', async (req, res) => {
     const evolution = findEvolutionStage(text);
     const { cardNumber, totalCardsInSet, setId: overrideSetId } = extractCardInfo(text);
     const cardDetails = await getCardPrice(cardNumber, totalCardsInSet, overrideSetId);
-    console.log(`📛 Set ID used: ${cardDetails.setId}`);
 
     const cardData = {
       name: cardDetails.name,
