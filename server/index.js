@@ -114,7 +114,8 @@ function extractCardInfo(text) {
   const normalMatch = text.match(/\b(\d{1,3})\/(\d{1,3})\b/);
   if (normalMatch) {
     const cardNumber = parseInt(normalMatch[1], 10).toString(); // ✅ removes leading zeros
-    const totalCards = normalMatch[2];
+    const totalCards = parseInt(normalMatch[2], 10).toString(); 
+    //const totalCards = normalMatch[2];
     return { cardNumber, totalCardsInSet: totalCards, setId: null };
   }
 
