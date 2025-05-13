@@ -148,7 +148,7 @@ async function getCardPrice(cardName, cardNumber, totalCardsInSet, setIdFromProm
       if (query) query += ' ';
       query += `set.id:${setMap[totalCardsInSet]}`;
     }
-
+    console.log('🔍 setmap:', setMap);
     console.log('🔍 Query:', query);
 
     const response = await axios.get(`https://api.pokemontcg.io/v2/cards?q=${query}`, {
