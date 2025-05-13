@@ -113,7 +113,7 @@ function extractCardInfo(text) {
 
   const normalMatch = text.match(/\b(\d{1,3})\/(\d{1,3})\b/);
   if (normalMatch) {
-    const cardNumber = normalMatch[1];
+    const cardNumber = parseInt(normalMatch[1], 10).toString(); // ✅ removes leading zeros
     const totalCards = normalMatch[2];
     return { cardNumber, totalCardsInSet: totalCards, setId: null };
   }
@@ -128,6 +128,7 @@ function extractCardInfo(text) {
 
   return { cardNumber: null, totalCardsInSet: null, setId: null };
 }
+
 
 async function getCardPrice(cardName, cardNumber, totalCardsInSet, setIdFromPromo = null) {
   try {
