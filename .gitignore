@@ -5,6 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 dist/
 gcloud-key.json
+server/gcloud-key.json
 # Env files
 .env
 node_modules/
