@@ -27,3 +27,4 @@ logs
 # Optional build files
 build/
 server/gcloud-key.json
+server/gcloud-key.json
